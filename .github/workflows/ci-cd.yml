@@ -1,0 +1,54 @@
+name: CI/CD Pipeline
+
+# Trigger the pipeline on every push to the main branch or on pull requests
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout your code from GitHub
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js Environment
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 3. Install Dependencies
+      - name: Install Dependencies
+        run: npm ci
+
+      # 4. Run TypeScript Type Check (Validates no TS syntax errors exist)
+      - name: Run TypeScript Type Check
+        run: npx tsc --noEmit
+
+      # 5. Build Local Docker Container to Verify Packaging Works
+      - name: Test Docker Container Build
+        run: docker build -t test-container .
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    # Only run deployment if code is pushed directly to the main branch
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      # Trigger Render Deployment Webhook automatically
+      - name: Trigger Deployment on Render
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
+            curl -X POST "$RENDER_DEPLOY_HOOK"
+          else
+            echo "Render deploy hook secret not set, skipping auto-deploy."
+          fi
